@@ -2,7 +2,7 @@
 name: Hot Data Updater
 on:
   schedule:
-    - cron: "0 * * * *"  # 每小时执行一次
+    - cron: "0 8-23/1 * * *"  # UTC+8时间每天8-23点每小时执行（对应UTC 0-15点）
   workflow_dispatch:
 jobs:
   run-spider:
@@ -11,15 +11,15 @@ jobs:
     - uses: actions/checkout@v2
     - name: Set up Python
       uses: actions/setup-python@v2
-      with: { python-version: '3.x' }
+      with: { python-version: '3.8' }
     - name: Install dependencies
       run: pip install requests beautifulsoup4
     - name: Run spider
       run: python spider.py
     - name: Commit & Push
       run: |
-        git config --global user.name "github-actions"
-        git config --global user.email "actions@github.com"
+        git config --global user.name "shlm"
+        git config --global user.email "haodebeidb@163.com"
         git add hot.json
         git commit -m "Update hot data"
         git push
