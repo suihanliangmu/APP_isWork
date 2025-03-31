@@ -2,8 +2,7 @@
 name: Hot Data Updater
 on:
   schedule:
-    - cron: '0,30 8-20 * * *'  # UTC+8时间每天8-20点每小时执行
-      timezone: Asia/Shanghai  #北京时间
+    - cron: '0,30 0-12 * * *'  # 北京时间每天8-20点每小时执行
   workflow_dispatch:
 jobs:
   run-spider:
