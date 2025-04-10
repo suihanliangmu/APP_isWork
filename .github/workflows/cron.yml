@@ -19,7 +19,7 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: '3.x'  # 使用最新的Python 3版本
-        cache: 'pip'  # 启用pip缓存加速依赖安装
+        # 移除pip缓存以避免依赖文件不存在的问题
         
     - name: Install dependencies
       run: |
@@ -53,5 +53,15 @@ jobs:
     - name: Sync only hot.json to Gitee
       run: |
         git remote add gitee git@gitee.com:aodb/is-work-app.git
+        # 获取远程分支名称
+        BRANCH_NAME=${GITHUB_REF#refs/heads/}
         # 确保仅推送hot.json文件的更改
-        git push gitee `git subtree split --prefix=. HEAD`:${{ github.ref }} --force
+        git checkout -b temp-branch
+        git reset --hard HEAD
+        cp hot.json /tmp/hot.json
+        git checkout --orphan sync-branch
+        rm -rf *
+        cp /tmp/hot.json ./hot.json
+        git add hot.json
+        git commit -m "Sync hot.json to Gitee"
+        git push gitee sync-branch:$BRANCH_NAME --force
