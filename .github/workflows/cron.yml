@@ -7,6 +7,7 @@ on:
 jobs:
   fetch-and-push:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     
     steps:
     - name: Checkout repository
@@ -23,11 +24,17 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
+        cache: 'pip'  # 启用内置缓存
+
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
         
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install requests beautifulsoup4
+        pip install -r requirements.txt
         
     - name: Fetch spider_plus
       run: python spider_plus.py
@@ -37,10 +44,10 @@ jobs:
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
         git add hot.json
-        git commit -m "Update Baidu hot search data" || echo "No changes to commit"
+        git diff --exit-code --quiet || (git commit -m "Update Baidu hot search data" && echo "Changes committed")
         
     - name: Push changes to GitHub
-      uses: ad-m/github-push-action@master
+      uses: ad-m/github-push-action@v0.6.0
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         branch: ${{ github.ref }}
