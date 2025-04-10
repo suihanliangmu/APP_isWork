@@ -25,13 +25,8 @@ jobs:
       with:
         python-version: '3.9'
         cache: 'pip'  # 启用内置缓存
+        cache-dependency-path: 'requirements.txt'  # 精确指定文件
 
-    - name: Cache dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-        
     - name: Install dependencies
       run: |
         pip install -r requirements.txt
