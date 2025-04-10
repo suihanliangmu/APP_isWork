@@ -12,6 +12,12 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
+
+# 新增这一步：设置安全目录
+    - name: Fix repository ownership
+      run: |
+        git config --global --add safe.directory /github/workspace
+        git config --global --add safe.directory /github/workspace/.git
       
     - name: Set up Python
       uses: actions/setup-python@v4
