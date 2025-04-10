@@ -1,8 +1,7 @@
-name: Sync hot.json to Gitee
-
+name: Fetch Hot and Sync to Gitee
 on:
   schedule:
-    - cron: '0,30 0-12 * * *'  # 北京时间每天8-20点每半小时执行
+    - cron: '0,30 0-12 * * *'  # 北京时间每天8-20点每小时执行
   workflow_dispatch:  # 允许手动触发工作流
 
 jobs:
@@ -13,12 +12,17 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v3
       with:
-        fetch-depth: 1  # 只获取最新的提交，减少下载量
-    
+        fetch-depth: 1
+
+    - name: Fix repository ownership
+      run: |
+        git config --global --add safe.directory /github/workspace
+        git config --global --add safe.directory /github/workspace/.git
+      
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.x'  # 使用最新的Python 3版本
+        python-version: '3.9'
         
     - name: Install dependencies
       run: |
@@ -32,7 +36,6 @@ jobs:
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        # 只添加hot.json文件
         git add hot.json
         git commit -m "Update Baidu hot search data" || echo "No changes to commit"
         
@@ -42,39 +45,26 @@ jobs:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         branch: ${{ github.ref }}
         
-    - name: Setup SSH and known hosts for Gitee
+    - name: Sync hot.json to Gitee
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.GITEE_PRIVATE_KEY }}
       run: |
+        # 配置SSH密钥
         mkdir -p ~/.ssh
-        echo "${{ secrets.GITEE_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
-        # 添加gitee.com到known_hosts
-        ssh-keyscan -t rsa gitee.com >> ~/.ssh/known_hosts
-        # 测试SSH连接
-        ssh -T git@gitee.com -o StrictHostKeyChecking=accept-new || true
+        ssh-keyscan gitee.com >> ~/.ssh/known_hosts
         
-    - name: Sync only hot.json to Gitee
-      run: |
-        # 获取当前分支名称
-        BRANCH_NAME=${GITHUB_REF#refs/heads/}
-        echo "Current branch: $BRANCH_NAME"
+        # 克隆Gitee仓库
+        git clone git@gitee.com:aodb/is-work-app.git gitee-repo
         
-        # 创建只包含hot.json的临时分支
-        git checkout -b temp-branch
-        git reset --hard HEAD
+        # 复制最新的hot.json到Gitee仓库
+        cp hot.json gitee-repo/
         
-        # 备份hot.json
-        cp hot.json /tmp/hot.json
-        
-        # 创建新的孤立分支，只包含hot.json
-        git checkout --orphan sync-branch
-        rm -rf *
-        cp /tmp/hot.json ./hot.json
-        
-        # 提交并推送到Gitee
+        # 提交并推送更新
+        cd gitee-repo
+        git config user.email "action@github.com"
+        git config user.name "GitHub Action"
         git add hot.json
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git commit -m "Sync hot.json to Gitee"
-        
-        # 使用debug模式推送，以便看到更多信息
-        GIT_SSH_COMMAND="ssh -v" git push git@gitee.com:aodb/is-work-app.git sync-branch:$BRANCH_NAME --force
+        git commit -m "Update hot.json from GitHub" || echo "No changes to commit"
+        git push origin master
