@@ -55,8 +55,8 @@ jobs:
         chmod 600 ~/.ssh/id_rsa
         ssh-keyscan gitee.com >> ~/.ssh/known_hosts
         
-        # 克隆Gitee仓库
-        git clone git@gitee.com:aodb/is-work-app.git gitee-repo
+        # 克隆Gitee仓库（指定分支名称）
+        git clone -b main git@gitee.com:aodb/is-work-app.git gitee-repo  # 修改这里
         
         # 复制最新的hot.json到Gitee仓库
         cp hot.json gitee-repo/
@@ -67,4 +67,4 @@ jobs:
         git config user.name "GitHub Action"
         git add hot.json
         git commit -m "Update hot.json from GitHub" || echo "No changes to commit"
-        git push origin master
+        git push origin HEAD:main  # 修改这里
