@@ -23,7 +23,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install requests beautifulsoup4
         
-    - name: Run spider_plus
+    - name: Fetch spider_plus
       run: python spider_plus.py
       
     - name: Commit changes
@@ -40,9 +40,9 @@ jobs:
         branch: ${{ github.ref }}
         
     - name: Sync to Gitee
-      uses: yanglbme/gitee-pages-action@main
+      uses: wearerequired/git-mirror-action@master
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.GITEE_PRIVATE_KEY }}
       with:
-        gitee-username: ${{ secrets.GITEE_USERNAME }}
-        gitee-password: ${{ secrets.GITEE_PASSWORD }}
-        gitee-repo: aodb/is-work-app
-        branch: main  # 或者master，取决于你的默认分支
+        source-repo: "git@github.com:${{ github.repository }}.git"
+        destination-repo: "git@gitee.com:aodb/is-work-app.git"
