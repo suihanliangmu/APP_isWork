@@ -1,8 +1,8 @@
-name: Fetch Hot and Sync to Gitee
-# 第一次成功移动github仓库到gitee中
+name: Sync hot.json to Gitee
+
 on:
   schedule:
-    - cron: '0,30 0-12 * * *'  # 北京时间每天8-20点每小时执行
+    - cron: '0,30 0-12 * * *'  # 北京时间每天8-20点每半小时执行
   workflow_dispatch:  # 允许手动触发工作流
 
 jobs:
@@ -12,17 +12,14 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
-
-# 新增这一步：设置安全目录
-    - name: Fix repository ownership
-      run: |
-        git config --global --add safe.directory /github/workspace
-        git config --global --add safe.directory /github/workspace/.git
-      
+      with:
+        fetch-depth: 1  # 只获取最新的提交，减少下载量
+    
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.9'
+        python-version: '3.x'  # 使用最新的Python 3版本
+        cache: 'pip'  # 启用pip缓存加速依赖安装
         
     - name: Install dependencies
       run: |
@@ -36,6 +33,7 @@ jobs:
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
+        # 只添加hot.json文件
         git add hot.json
         git commit -m "Update Baidu hot search data" || echo "No changes to commit"
         
@@ -45,10 +43,15 @@ jobs:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         branch: ${{ github.ref }}
         
-    - name: Sync to Gitee
-      uses: wearerequired/git-mirror-action@master
-      env:
-        SSH_PRIVATE_KEY: ${{ secrets.GITEE_PRIVATE_KEY }}
+    - name: Setup SSH for Gitee
+      uses: shimataro/ssh-key-action@v2
       with:
-        source-repo: "https://github.com/${{ github.repository }}.git"
-        destination-repo: "git@gitee.com:aodb/is-work-app.git"
+        key: ${{ secrets.GITEE_PRIVATE_KEY }}
+        known_hosts: unnecessary
+        if_key_exists: replace
+    
+    - name: Sync only hot.json to Gitee
+      run: |
+        git remote add gitee git@gitee.com:aodb/is-work-app.git
+        # 确保仅推送hot.json文件的更改
+        git push gitee `git subtree split --prefix=. HEAD`:${{ github.ref }} --force
