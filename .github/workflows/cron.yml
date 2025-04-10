@@ -50,5 +50,5 @@ jobs:
       env:
         SSH_PRIVATE_KEY: ${{ secrets.GITEE_PRIVATE_KEY }}
       with:
-        source-repo: "git@github.com:${{ github.repository }}.git"
+        source-repo: "https://github.com/${{ github.repository }}.git"
         destination-repo: "git@gitee.com:aodb/is-work-app.git"
