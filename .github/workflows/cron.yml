@@ -44,5 +44,5 @@ jobs:
       with:
         gitee-username: ${{ secrets.GITEE_USERNAME }}
         gitee-password: ${{ secrets.GITEE_PASSWORD }}
-        gitee-repo: 你的Gitee用户名/你的仓库名
+        gitee-repo: aodb/is-work-app
         branch: main  # 或者master，取决于你的默认分支
