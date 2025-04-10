@@ -1,0 +1,25 @@
+# .github/workflows/cron.yml
+name: Hot Data Updater
+on:
+  schedule:
+    - cron: '0,30 0-12 * * *'  # 北京时间每天8-20点每小时执行
+  workflow_dispatch:
+jobs:
+  run-spider:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with: { python-version: '3.8' }
+    - name: Install dependencies
+      run: pip install requests beautifulsoup4
+    - name: Run spider
+      run: python spider.py
+    - name: Commit & Push
+      run: |
+        git config --global user.name "github-actions"
+        git config --global user.email "actions@github.com"
+        git add hot.json
+        git commit -m "Update hot data"
+        git push
