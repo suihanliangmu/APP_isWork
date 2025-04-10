@@ -19,7 +19,6 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: '3.x'  # 使用最新的Python 3版本
-        # 移除pip缓存以避免依赖文件不存在的问题
         
     - name: Install dependencies
       run: |
@@ -43,25 +42,39 @@ jobs:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         branch: ${{ github.ref }}
         
-    - name: Setup SSH for Gitee
-      uses: shimataro/ssh-key-action@v2
-      with:
-        key: ${{ secrets.GITEE_PRIVATE_KEY }}
-        known_hosts: unnecessary
-        if_key_exists: replace
-    
+    - name: Setup SSH and known hosts for Gitee
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.GITEE_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        # 添加gitee.com到known_hosts
+        ssh-keyscan -t rsa gitee.com >> ~/.ssh/known_hosts
+        # 测试SSH连接
+        ssh -T git@gitee.com -o StrictHostKeyChecking=accept-new || true
+        
     - name: Sync only hot.json to Gitee
       run: |
-        git remote add gitee git@gitee.com:aodb/is-work-app.git
-        # 获取远程分支名称
+        # 获取当前分支名称
         BRANCH_NAME=${GITHUB_REF#refs/heads/}
-        # 确保仅推送hot.json文件的更改
+        echo "Current branch: $BRANCH_NAME"
+        
+        # 创建只包含hot.json的临时分支
         git checkout -b temp-branch
         git reset --hard HEAD
+        
+        # 备份hot.json
         cp hot.json /tmp/hot.json
+        
+        # 创建新的孤立分支，只包含hot.json
         git checkout --orphan sync-branch
         rm -rf *
         cp /tmp/hot.json ./hot.json
+        
+        # 提交并推送到Gitee
         git add hot.json
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
         git commit -m "Sync hot.json to Gitee"
-        git push gitee sync-branch:$BRANCH_NAME --force
+        
+        # 使用debug模式推送，以便看到更多信息
+        GIT_SSH_COMMAND="ssh -v" git push git@gitee.com:aodb/is-work-app.git sync-branch:$BRANCH_NAME --force
