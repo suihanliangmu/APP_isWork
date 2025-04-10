@@ -1,96 +1,54 @@
-name: Sync Hot.json to GitHub and Gitee
-
+name: Fetch Hot and Sync to Gitee
+# 第一次成功移动github仓库到gitee中
 on:
   schedule:
-    # 北京时间 8:00-20:00 每小时执行两次（0分和30分）
-    - cron: '0,30 0-12 * * *'
-  workflow_dispatch:
+    - cron: '0,30 0-12 * * *'  # 北京时间每天8-20点每小时执行
+  workflow_dispatch:  # 允许手动触发工作流
 
 jobs:
   fetch-and-push:
     runs-on: ubuntu-latest
     
     steps:
-    # 1. 代码检出
     - name: Checkout repository
       uses: actions/checkout@v3
 
-    # 2. Python 环境配置（显式指定 3.x 版本）
+# 新增这一步：设置安全目录
+    - name: Fix repository ownership
+      run: |
+        git config --global --add safe.directory /github/workspace
+        git config --global --add safe.directory /github/workspace/.git
+      
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.8'  # 使用最新 3.8 版本
-
-    # 新增依赖缓存（优化点：减少重复安装时间）
-    - name: Cache pip packages
-      uses: actions/cache@v3
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-
-    # 3. 依赖安装（建议后续改用 requirements.txt）
+        python-version: '3.9'
+        
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install requests beautifulsoup4
-
-    # 4. 执行爬虫脚本
-    - name: Run spider
+        
+    - name: Fetch spider_plus
       run: python spider_plus.py
-
-    # 5. GitHub 提交优化（优化点：仅在文件变更时提交）
-    - name: Commit to GitHub
+      
+    - name: Commit changes
       run: |
-        # 配置 Git 身份（提前设置避免后续操作失败）
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        
-        # 智能检测文件变更（优化点：避免空提交）
         git add hot.json
-        if ! git diff --cached --quiet; then
-          git commit -m "Update hot.json (Automated)"
-          git push
-          echo "✅ Pushed changes to GitHub"
-        else
-          echo "🔄 No changes detected, skip GitHub commit"
-        fi
-
-    # 6. Gitee 同步准备（SSH 密钥配置）
-    - name: Configure SSH for Gitee
-      uses: webfactory/ssh-agent@v0.7.0
+        git commit -m "Update Baidu hot search data" || echo "No changes to commit"
+        
+    - name: Push changes to GitHub
+      uses: ad-m/github-push-action@master
       with:
-        ssh-private-key: ${{ secrets.GITEE_PRIVATE_KEY }}
-
-    # 7. Gitee 同步优化（优化点：原子化操作 + 变更检测）
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        branch: ${{ github.ref }}
+        
     - name: Sync to Gitee
-      run: |
-        # 使用临时目录避免污染工作区
-        temp_dir=$(mktemp -d)
-        
-        # 克隆仓库（优化点：限制深度节省时间）
-        git clone --depth 1 git@gitee.com:aodb/is-work-app.git $temp_dir
-        
-        # 文件同步操作
-        cp -f hot.json $temp_dir/hot.json
-        
-        # 进入目录操作
-        cd $temp_dir
-        
-        # 配置独立 Git 身份（避免与 GitHub 配置冲突）
-        git config user.email "action@github.com"
-        git config user.name "GitHub Action"
-        
-        # 智能提交检测（优化点：避免空提交）
-        git add hot.json
-        if ! git diff --cached --quiet; then
-          git commit -m "Sync hot.json from GitHub (Automated)"
-          git push origin master
-          echo "✅ Pushed changes to Gitee"
-        else
-          echo "🔄 No changes detected, skip Gitee commit"
-        fi
-        
-        # 清理临时目录
-        rm -rf $temp_dir
+      uses: wearerequired/git-mirror-action@master
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.GITEE_PRIVATE_KEY }}
+      with:
+        source-repo: "https://github.com/${{ github.repository }}.git"
+        destination-repo: "git@gitee.com:aodb/is-work-app.git"
