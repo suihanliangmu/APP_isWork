@@ -53,16 +53,32 @@ jobs:
         SSH_PRIVATE_KEY: ${{ secrets.GITEE_PRIVATE_KEY }}
       run: |
 
-        set -e  # 任何命令失败则终止脚本
+        set -ex  # 开启详细日志
         
         # 配置SSH密钥
         mkdir -p ~/.ssh
         echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
         ssh-keyscan gitee.com >> ~/.ssh/known_hosts
+
+        # 测试 SSH 连接（关键调试步骤）
+        ssh -T git@gitee.com || true  # 忽略错误继续执行
         
         # 克隆Gitee仓库（指定分支名称）
-        git clone -b main git@gitee.com:aodb/is-work-app.git gitee-repo
+        # git clone -b main git@gitee.com:aodb/is-work-app.git gitee-repo
+
+        # 克隆仓库（添加重试逻辑）
+        retry_count=0
+        max_retries=3
+        until git clone -b main git@gitee.com:aodb/is-work-app.git gitee-repo; do
+          retry_count=$((retry_count+1))
+          if [ $retry_count -ge $max_retries ]; then
+            echo "Failed to clone after $max_retries attempts"
+            exit 1
+          fi
+          echo "Retrying clone... Attempt $retry_count"
+          sleep 5
+        done
         
         # 复制最新的hot.json到Gitee仓库
         cp hot.json gitee-repo/
