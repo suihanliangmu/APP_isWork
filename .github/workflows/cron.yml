@@ -7,15 +7,15 @@ on:
 jobs:
   fetch-and-push:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15  # 任务最多运行 15 分钟，超时则自动终止。
     
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
       with:
-        fetch-depth: 1
+        fetch-depth: 1  # 检出仓库代码，fetch-depth: 1 表示仅拉取最近一次提交以加快速度。
 
-    - name: Fix repository ownership
+    - name: Fix repository ownership  # 解决 GitHub Actions 环境中 Git 安全目录权限问题
       run: |
         git config --global --add safe.directory /github/workspace
         git config --global --add safe.directory /github/workspace/.git
@@ -29,7 +29,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        pip install -r requirements.txt
+        pip install --no-cache-dir -r requirements.txt
         
     - name: Fetch spider_plus
       run: python spider_plus.py
@@ -40,6 +40,7 @@ jobs:
         git config --local user.name "GitHub Action"
         git add hot.json
         git diff --exit-code --quiet || (git commit -m "Update Baidu hot search data" && echo "Changes committed")
+        # 使用 git diff --exit-code --quiet 检测文件变化
         
     - name: Push changes to GitHub
       uses: ad-m/github-push-action@v0.6.0
@@ -51,6 +52,9 @@ jobs:
       env:
         SSH_PRIVATE_KEY: ${{ secrets.GITEE_PRIVATE_KEY }}
       run: |
+
+        set -e  # 任何命令失败则终止脚本
+        
         # 配置SSH密钥
         mkdir -p ~/.ssh
         echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
@@ -58,7 +62,7 @@ jobs:
         ssh-keyscan gitee.com >> ~/.ssh/known_hosts
         
         # 克隆Gitee仓库（指定分支名称）
-        git clone -b main git@gitee.com:aodb/is-work-app.git gitee-repo  # 修改这里
+        git clone -b main git@gitee.com:aodb/is-work-app.git gitee-repo
         
         # 复制最新的hot.json到Gitee仓库
         cp hot.json gitee-repo/
@@ -69,4 +73,4 @@ jobs:
         git config user.name "GitHub Action"
         git add hot.json
         git commit -m "Update hot.json from GitHub" || echo "No changes to commit"
-        git push origin HEAD:main  # 修改这里
+        git push origin HEAD:main
