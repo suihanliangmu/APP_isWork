@@ -52,41 +52,48 @@ jobs:
       env:
         SSH_PRIVATE_KEY: ${{ secrets.GITEE_PRIVATE_KEY }}
       run: |
-
         set -ex  # 开启详细日志
         
-        # 配置SSH密钥
-        mkdir -p ~/.ssh
-        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
-        ssh-keyscan gitee.com >> ~/.ssh/known_hosts
-
-        # 测试 SSH 连接（关键调试步骤）
-        ssh -T git@gitee.com || true  # 忽略错误继续执行
-        
-        # 克隆Gitee仓库（指定分支名称）
-        # git clone -b main git@gitee.com:aodb/is-work-app.git gitee-repo
-
-        # 克隆仓库（添加重试逻辑）
+        max_retries=2              # 最大重试次数
+        retry_wait=300             # 等待5分钟（300秒）
         retry_count=0
-        max_retries=3
-        until git clone -b main git@gitee.com:aodb/is-work-app.git gitee-repo; do
-          retry_count=$((retry_count+1))
-          if [ $retry_count -ge $max_retries ]; then
-            echo "Failed to clone after $max_retries attempts"
-            exit 1
-          fi
-          echo "Retrying clone... Attempt $retry_count"
-          sleep 5
+        success=false
+    
+        until [ $success = true ]; do
+          # 使用子shell包裹操作，任何步骤失败都会退出子shell
+          ( 
+            set -e  # 子shell内开启错误退出
+            
+            # 配置SSH密钥
+            mkdir -p ~/.ssh
+            echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+            chmod 600 ~/.ssh/id_rsa
+            ssh-keyscan gitee.com >> ~/.ssh/known_hosts
+    
+            # 测试SSH连接（忽略错误）
+            ssh -T git@gitee.com || true
+            
+            # 克隆仓库（移除原有重试逻辑，由外层处理）
+            git clone -b main git@gitee.com:aodb/is-work-app.git gitee-repo
+            
+            # 复制文件
+            cp hot.json gitee-repo/
+            
+            # 提交并推送
+            cd gitee-repo
+            git config user.email "action@github.com"
+            git config user.name "GitHub Action"
+            git add hot.json
+            git commit -m "Update hot.json from GitHub" || echo "No changes to commit"
+            git push origin HEAD:main
+          ) && success=true || {
+            # 记录错误并等待重试
+            retry_count=$((retry_count+1))
+            if [ $retry_count -ge $max_retries ]; then
+              echo "重试超过 $max_retries 次，终止任务"
+              exit 1
+            fi
+            echo "第 $retry_count 次重试，等待 ${retry_wait} 秒..."
+            sleep $retry_wait
+          }
         done
-        
-        # 复制最新的hot.json到Gitee仓库
-        cp hot.json gitee-repo/
-        
-        # 提交并推送更新
-        cd gitee-repo
-        git config user.email "action@github.com"
-        git config user.name "GitHub Action"
-        git add hot.json
-        git commit -m "Update hot.json from GitHub" || echo "No changes to commit"
-        git push origin HEAD:main
