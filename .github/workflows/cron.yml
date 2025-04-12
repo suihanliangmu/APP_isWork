@@ -31,8 +31,8 @@ jobs:
       run: |
         pip install --no-cache-dir -r requirements.txt
         
-    - name: Fetch spider_plus
-      run: python spider_plus.py
+    - name: Fetch spider
+      run: python spider.py
       
     - name: Commit changes
       run: |
