@@ -117,7 +117,7 @@ def get_baidu_teleplay_top10() -> List[str]:
             # 处理演员显示逻辑
             actors = item['show'][2].split('：')[-1].split(' / ')[:6]
             actors_str = ' / '.join(actors)
-            results.append(f"{i + 1}. {item['word']}.演员：{actors_str}")
+            results.append(f"{item['word']}.演员：{actors_str}")
         return results
     except Exception as e:
         return [f"电视剧数据获取失败：{str(e)}"]
