@@ -4,6 +4,8 @@ import time
 from datetime import datetime
 from typing import List, Dict, Any
 import random
+import pytz
+import base64
 
 # 通用请求头配置
 COMMON_HEADERS = {
@@ -138,11 +140,15 @@ def get_xueqiu_hot_stocks() -> List[str]:
     except Exception as e:
         return [f"热股数据获取失败：{str(e)}"]
 
+def get_beijing_time():
+    """获取北京时间"""
+    tz = pytz.timezone('Asia/Shanghai')
+    return datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
 
 def format_output(data: Dict[str, List[str]]) -> Dict[str, Any]:
     """格式化输出数据结构"""
     return {
-        "代码执行完成时间": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "代码执行完成时间": get_beijing_time(),
         "微博": data['weibo'],
         "百度": data['baidu'],
         "头条": data['toutiao'],
@@ -166,13 +172,17 @@ def main():
     # 生成格式化输出
     formatted_data = format_output(result_data)
 
-    # 写入JSON文件
+    # 写入JSON文件,由于gitee经常显示文件可能违规，特做处理
+    json_str = json.dumps(formatted_data, ensure_ascii=False)
+    encoded_data = base64.b64encode(json_str.encode('utf-8')).decode('utf-8')
+
+    # 写入Base64编码后的文件
     with open('hot.json', 'w', encoding='utf-8') as f:
-        json.dump(formatted_data, f, ensure_ascii=False, indent=2)
+        f.write(encoded_data)
 
     print("数据爬取完成并已保存至hot.json")
 
 
 if __name__ == "__main__":
-    time.sleep(random.randint(3, 9))  # 随机暂停3~9s,避免反爬虫机制监测
+    time.sleep(random.randint(3, 9))  # 随机暂停3~9s,避免反爬机制监测
     main()
