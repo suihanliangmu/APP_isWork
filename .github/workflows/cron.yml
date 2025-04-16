@@ -24,8 +24,6 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
-        cache: 'pip'  # 启用内置缓存
-        cache-dependency-path: 'requirements.txt'  # 精确指定文件
 
     - name: Install dependencies
       run: |
