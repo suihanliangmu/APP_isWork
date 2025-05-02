@@ -195,7 +195,7 @@ def main():
     with open('hot_data.txt', 'w', encoding='utf-8') as f:
         f.write(obfuscated_data)
 
-    print("数据爬取完成并已保存至hot.json")
+    print("数据爬取完成并已保存至hot_data.txt")
 
 
 if __name__ == "__main__":
