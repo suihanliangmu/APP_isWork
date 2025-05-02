@@ -36,7 +36,7 @@ jobs:
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add hot.json
+        git add hot_data.txt
         git diff --exit-code --quiet || (git commit -m "Update Baidu hot search data" && echo "Changes committed")
         # 使用 git diff --exit-code --quiet 检测文件变化
         
@@ -46,7 +46,7 @@ jobs:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         branch: ${{ github.ref }}
         
-    - name: Sync hot.json to Gitee
+    - name: Sync hot_data to Gitee
       env:
         SSH_PRIVATE_KEY: ${{ secrets.GITEE_PRIVATE_KEY }}
       run: |
@@ -75,14 +75,14 @@ jobs:
             git clone -b main git@gitee.com:aodb/is-work-app.git gitee-repo
             
             # 复制文件
-            cp hot.json gitee-repo/
+            cp hot_data.txt gitee-repo/
             
             # 提交并推送
             cd gitee-repo
             git config user.email "action@github.com"
             git config user.name "GitHub Action"
-            git add hot.json
-            git commit -m "Update hot.json from GitHub" || echo "No changes to commit"
+            git add hot_data.txt
+            git commit -m "Update hot_data.txt from GitHub" || echo "No changes to commit"
             git push origin HEAD:main
           ) && success=true || {
             # 记录错误并等待重试
