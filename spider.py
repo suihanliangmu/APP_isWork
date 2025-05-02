@@ -157,6 +157,20 @@ def format_output(data: Dict[str, List[str]]) -> Dict[str, Any]:
         "热股": data['stocks']
     }
 
+# 新增混淆函数
+def simple_obfuscate(data: str) -> str:
+    """轻度混淆处理"""
+    # 步骤1: 反转字符串
+    reversed_str = data[::-1]
+    # 步骤2: 每隔3个字符插入随机干扰符
+    obfuscated = []
+    for i, char in enumerate(reversed_str):
+        obfuscated.append(char)
+        if (i+1) % 3 == 0:
+            obfuscated.append(chr(random.randint(97, 122)))  # 随机小写字母
+    return ''.join(obfuscated)
+
+
 
 def main():
     """主执行函数"""
@@ -175,10 +189,11 @@ def main():
     # 写入JSON文件,由于gitee经常显示文件可能违规，特做处理
     json_str = json.dumps(formatted_data, ensure_ascii=False)
     encoded_data = base64.b64encode(json_str.encode('utf-8')).decode('utf-8')
+    obfuscated_data = simple_obfuscate(encoded_data)  # 新增混淆
 
     # 写入Base64编码后的文件
-    with open('hot.json', 'w', encoding='utf-8') as f:
-        f.write(encoded_data)
+    with open('hot_data.txt', 'w', encoding='utf-8') as f:
+        f.write(obfuscated_data)
 
     print("数据爬取完成并已保存至hot.json")
 
