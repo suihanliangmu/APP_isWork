@@ -69,7 +69,7 @@ def get_baidu_top10() -> List[str]:
         data = response.json()['data']['cards'][0]['content'][0:10]
         return [f"{i + 1}. {item['query']}" for i, item in enumerate(data)]
     except Exception as e:
-        return [f"百度数据获取失败：{str(e)}"]
+        return [f"百度数据获取失败"]
 
 
 def get_weibo_top10() -> List[str]:
@@ -80,7 +80,7 @@ def get_weibo_top10() -> List[str]:
         data = response.json()['data']['band_list'][0:10]
         return [f"{i + 1}. {item['word']}" for i, item in enumerate(data)]
     except Exception as e:
-        return [f"微博数据获取失败：{str(e)}"]
+        return [f"微博数据获取失败"]
 
 
 def get_toutiao_top10() -> List[str]:
@@ -91,18 +91,18 @@ def get_toutiao_top10() -> List[str]:
         data = response.json()['data'][0:10]
         return [f"{i + 1}. {item['Title']}" for i, item in enumerate(data)]
     except Exception as e:
-        return [f"头条数据获取失败：{str(e)}"]
+        return [f"头条数据获取失败"]
 
 
 def get_zhihu_top10() -> List[str]:
     """获取知乎热榜"""
-    url = 'https://www.zhihu.com/api/v3/feed/topstory/hot-lists/total'
+    url = 'https://www.zhihu.com/api/v4/search/top_search/tabs/hot/items'
     try:
         response = send_request(url, COMMON_HEADERS)
         data = response.json()['data'][0:10]
-        return [f"{i + 1}. {item['target']['title']}" for i, item in enumerate(data)]
+        return [f"{i + 1}. {item['query_display']}" for i, item in enumerate(data)]
     except Exception as e:
-        return [f"知乎数据获取失败：{str(e)}"]
+        return [f"知乎数据获取失败"]
 
 
 def get_baidu_teleplay_top10() -> List[str]:
@@ -120,7 +120,7 @@ def get_baidu_teleplay_top10() -> List[str]:
             results.append(f"{item['word']}.演员：{actors_str}")
         return results
     except Exception as e:
-        return [f"电视剧数据获取失败：{str(e)}"]
+        return [f"电视剧数据获取失败"]
 
 
 def get_xueqiu_hot_stocks() -> List[str]:
@@ -138,7 +138,7 @@ def get_xueqiu_hot_stocks() -> List[str]:
             for i, item in enumerate(data)
         ]
     except Exception as e:
-        return [f"热股数据获取失败：{str(e)}"]
+        return [f"热股数据获取失败"]
 
 def get_beijing_time():
     """获取北京时间"""
