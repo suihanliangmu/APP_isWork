@@ -52,8 +52,8 @@ jobs:
       run: |
         set -ex  # 开启详细日志
         
-        max_retries=2              # 最大重试次数
-        retry_wait=300             # 等待5分钟（300秒）
+        max_retries=3              # 最大重试次数
+        retry_wait=15             # 等待15秒
         retry_count=0
         success=false
     
@@ -61,6 +61,9 @@ jobs:
           # 使用子shell包裹操作，任何步骤失败都会退出子shell
           ( 
             set -e  # 子shell内开启错误退出
+
+            # 清理可能存在的残留目录
+            rm -rf gitee-repo || true
             
             # 配置SSH密钥
             mkdir -p ~/.ssh
@@ -72,7 +75,7 @@ jobs:
             ssh -T git@gitee.com || true
             
             # 克隆仓库（移除原有重试逻辑，由外层处理）
-            git clone -b main git@gitee.com:aodb/is-work-app.git gitee-repo
+            git clone --depth=1 -b main git@gitee.com:aodb/is-work-app.git gitee-repo
             
             # 复制文件
             cp hot_data.txt gitee-repo/
@@ -82,7 +85,7 @@ jobs:
             git config user.email "action@github.com"
             git config user.name "GitHub Action"
             git add hot_data.txt
-            git commit -m "Update hot_data.txt from GitHub" || echo "No changes to commit"
+            git commit -m "Update hot_data.txt from GitHub" || exit 0  # 无变化则退出
             git push origin HEAD:main
           ) && success=true || {
             # 记录错误并等待重试
