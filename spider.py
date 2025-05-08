@@ -156,7 +156,7 @@ def format_output(data: Dict[str, List[str]]) -> Dict[str, Any]:
         "微博": data['weibo'],
         "百度": data['baidu'],
         "头条": data['toutiao'],
-        "小说": data['zhihu'],
+        "小说": data['novel'],
         "电视剧": data['teleplay'],
         "热股": data['stocks']
     }
