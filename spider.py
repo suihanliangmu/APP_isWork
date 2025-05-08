@@ -94,15 +94,19 @@ def get_toutiao_top10() -> List[str]:
         return [f"头条数据获取失败"]
 
 
-def get_zhihu_top10() -> List[str]:
-    """获取知乎热榜"""
-    url = 'https://www.zhihu.com/api/v4/search/top_search/tabs/hot/items'
+def get_baidu_novel_top10() -> List[str]:
+    """获取百度小说热榜"""
+    url = 'https://top.baidu.com/api/board?platform=wise&tab=novel'
     try:
         response = send_request(url, COMMON_HEADERS)
-        data = response.json()['data'][0:10]
-        return [f"{i + 1}. {item['query_display']}" for i, item in enumerate(data)]
+        data = response.json()['data']['cards'][0]['content'][0:10]
+        results = []
+        for i, item in enumerate(data):
+            # 处理演员显示逻辑
+            results.append(f"{item['word']}.{item['show'][0]}")
+        return results
     except Exception as e:
-        return [f"知乎数据获取失败"]
+        return [f"小说数据获取失败"]
 
 
 def get_baidu_teleplay_top10() -> List[str]:
@@ -152,7 +156,7 @@ def format_output(data: Dict[str, List[str]]) -> Dict[str, Any]:
         "微博": data['weibo'],
         "百度": data['baidu'],
         "头条": data['toutiao'],
-        "知乎": data['zhihu'],
+        "小说": data['zhihu'],
         "电视剧": data['teleplay'],
         "热股": data['stocks']
     }
@@ -178,7 +182,7 @@ def main():
         'weibo': get_weibo_top10(),
         'baidu': get_baidu_top10(),
         'toutiao': get_toutiao_top10(),
-        'zhihu': get_zhihu_top10(),
+        'novel': get_baidu_novel_top10(),
         'teleplay': get_baidu_teleplay_top10(),
         'stocks': get_xueqiu_hot_stocks()
     }
