@@ -65,7 +65,7 @@ jobs:
         # 确保SSH目录存在并具有正确权限
         mkdir -p ~/.ssh
         chmod 700 ~/.ssh
-
+    
         # 检查密钥是否设置
         if [ -z "$SSH_PRIVATE_KEY" ]; then
           echo "警告: GITEE_PRIVATE_KEY 密钥未设置，将尝试使用HTTPS方式"
@@ -73,17 +73,17 @@ jobs:
           exit 0
         fi
         
-        # 写入密钥文件 - 确保输出结尾有换行符并处理可能的格式问题
-        echo -e "$SSH_PRIVATE_KEY\n" | sed 's/\\n/\n/g' > ~/.ssh/id_rsa
+        # 写入密钥文件 - 使用更可靠的方法
+        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
         
         # 扫描主机密钥并验证
         ssh-keyscan -t rsa gitee.com > ~/.ssh/known_hosts 2>/dev/null
         chmod 644 ~/.ssh/known_hosts
         
-        # 测试SSH连接
+        # 测试SSH连接 - 修改为不会导致步骤失败的方式
         echo "测试SSH连接..."
-        if ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 -T git@gitee.com 2>&1; then
+        if ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 -T git@gitee.com >/dev/null 2>&1; then
           echo "SSH连接测试成功"
           echo "ssh_available=true" >> $GITHUB_OUTPUT
         else
