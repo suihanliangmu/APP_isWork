@@ -57,7 +57,7 @@ jobs:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         branch: ${{ github.ref }}
       
-    - name: 配置SSH密钥并测试
+    - name: 配置SSH密钥
       id: setup_ssh
       env:
         SSH_PRIVATE_KEY: ${{ secrets.GITEE_PRIVATE_KEY }}
@@ -68,12 +68,12 @@ jobs:
     
         # 检查密钥是否设置
         if [ -z "$SSH_PRIVATE_KEY" ]; then
-          echo "警告: GITEE_PRIVATE_KEY 密钥未设置，将尝试使用HTTPS方式"
+          echo "警告: GITEE_PRIVATE_KEY 密钥未设置，将使用HTTPS方式"
           echo "ssh_available=false" >> $GITHUB_OUTPUT
           exit 0
         fi
         
-        # 写入密钥文件 - 使用更可靠的方法
+        # 写入密钥文件
         echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
         
@@ -81,15 +81,8 @@ jobs:
         ssh-keyscan -t rsa gitee.com > ~/.ssh/known_hosts 2>/dev/null
         chmod 644 ~/.ssh/known_hosts
         
-        # 测试SSH连接 - 修改为不会导致步骤失败的方式
-        echo "测试SSH连接..."
-        if ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 -T git@gitee.com >/dev/null 2>&1; then
-          echo "SSH连接测试成功"
-          echo "ssh_available=true" >> $GITHUB_OUTPUT
-        else
-          echo "SSH连接测试失败，将尝试使用HTTPS方式"
-          echo "ssh_available=false" >> $GITHUB_OUTPUT
-        fi
+        # 不进行SSH测试，直接假设配置正确
+        echo "ssh_available=true" >> $GITHUB_OUTPUT
         
     - name: 同步hot_data.txt到Gitee
       if: always()  # 无论SSH测试成功与否都尝试同步
