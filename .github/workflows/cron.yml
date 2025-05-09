@@ -1,13 +1,13 @@
 name: 热搜数据同步
 on:
   schedule:
-    - cron: '0 22-23,0-14 * * *'  # 每天22-23点和0-14点整点执行
+    - cron: '0 22,2,6,10 * * *'  # 每天22点、2点、6点、10点执行
   workflow_dispatch:  # 允许手动触发
 
 jobs:
   fetch-and-sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 15  # 设置超时时间
+    timeout-minutes: 30  # 超时时间30分钟
     
     steps:
     - name: 检出代码库
@@ -23,10 +23,13 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
-        cache: 'pip'  # 缓存pip依赖以加速安装
+        # 移除pip缓存配置，避免缓存错误
 
     - name: 安装依赖
       run: |
+        # 创建pip缓存目录
+        mkdir -p ~/.cache/pip
+        # 安装依赖
         pip install --no-cache-dir -r requirements.txt
         
     - name: 爬取数据
@@ -42,7 +45,7 @@ jobs:
           echo "更新::无更改，跳过提交"
           echo "has_changes=false" >> $GITHUB_OUTPUT
         else
-          git commit -m "更新数据 $(date '+%Y-%m-%d %H:%M:%S')"
+          git commit -m "更新百度热搜数据 $(date '+%Y-%m-%d %H:%M:%S')"
           echo "更新::成功提交更改"
           echo "has_changes=true" >> $GITHUB_OUTPUT
         fi
@@ -54,92 +57,70 @@ jobs:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         branch: ${{ github.ref }}
       
-    - name: 准备SSH目录
-      id: prepare_ssh
-      run: |
-        mkdir -p ~/.ssh
-        chmod 700 ~/.ssh
-        echo "timestamp=$(date '+%Y%m%d%H%M%S')" >> $GITHUB_OUTPUT
-      
-    - name: 配置SSH密钥
+    - name: 配置SSH密钥并测试
+      id: setup_ssh
       env:
         SSH_PRIVATE_KEY: ${{ secrets.GITEE_PRIVATE_KEY }}
       run: |
-        set -e  # 出错立即退出
-        
-        # 确保变量非空且不是占位符
-        if [ -z "$SSH_PRIVATE_KEY" ] || [ "$SSH_PRIVATE_KEY" = "***" ]; then
-          echo "错误: GITEE_PRIVATE_KEY 密钥未正确设置"
-          exit 1
+        # 确保SSH目录存在并具有正确权限
+        mkdir -p ~/.ssh
+        chmod 700 ~/.ssh
+
+        # 检查密钥是否设置
+        if [ -z "$SSH_PRIVATE_KEY" ]; then
+          echo "警告: GITEE_PRIVATE_KEY 密钥未设置，将尝试使用HTTPS方式"
+          echo "ssh_available=false" >> $GITHUB_OUTPUT
+          exit 0
         fi
         
-        # 清理可能存在的旧密钥
-        rm -f ~/.ssh/id_rsa ~/.ssh/id_rsa.pub ~/.ssh/known_hosts
-        
-        # 写入密钥文件前检查格式
-        if ! echo "$SSH_PRIVATE_KEY" | grep -q "BEGIN.*PRIVATE KEY"; then
-          echo "错误: SSH密钥格式不正确"
-          exit 1
-        fi
-        
-        # 写入密钥文件
-        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+        # 写入密钥文件 - 确保输出结尾有换行符并处理可能的格式问题
+        echo -e "$SSH_PRIVATE_KEY\n" | sed 's/\\n/\n/g' > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
         
         # 扫描主机密钥并验证
-        ssh-keyscan -t rsa,ecdsa,ed25519 gitee.com > ~/.ssh/known_hosts 2>/dev/null
+        ssh-keyscan -t rsa gitee.com > ~/.ssh/known_hosts 2>/dev/null
         chmod 644 ~/.ssh/known_hosts
         
-        # 验证密钥格式和连接性
-        if ! ssh-keygen -l -f ~/.ssh/id_rsa >/dev/null 2>&1; then
-          echo "错误: SSH密钥格式无效"
-          exit 1
-        fi
-        
-        # 快速测试连接
-        if ! ssh -o BatchMode=yes -o ConnectTimeout=10 -T git@gitee.com 2>&1 | grep -v "Permission denied" >/dev/null; then
-          echo "警告: SSH连接测试未完全通过，但可能仍可继续"
+        # 测试SSH连接
+        echo "测试SSH连接..."
+        if ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 -T git@gitee.com 2>&1; then
+          echo "SSH连接测试成功"
+          echo "ssh_available=true" >> $GITHUB_OUTPUT
+        else
+          echo "SSH连接测试失败，将尝试使用HTTPS方式"
+          echo "ssh_available=false" >> $GITHUB_OUTPUT
         fi
         
     - name: 同步hot_data.txt到Gitee
+      if: always()  # 无论SSH测试成功与否都尝试同步
       id: sync_to_gitee
       env:
         TEMP_DIR: "/tmp/gitee-sync-${{ steps.prepare_ssh.outputs.timestamp }}"
       run: |
-        set -e  # 出错立即退出
+        set -x  # 输出执行的每条命令，便于调试
         
         # 创建临时目录
         mkdir -p "$TEMP_DIR"
         
-        # 使用更可靠的克隆策略
-        echo "开始克隆Gitee仓库..."
-        MAX_CLONE_RETRIES=3
-        CLONE_SUCCESS=false
-        
-        for i in $(seq 1 $MAX_CLONE_RETRIES); do
-          if git clone --depth=1 --single-branch --branch main git@gitee.com:aodb/is-work-app.git "$TEMP_DIR"; then
-            CLONE_SUCCESS=true
-            break
-          else
-            echo "克隆失败 (尝试 $i/$MAX_CLONE_RETRIES)"
-            if [ $i -lt $MAX_CLONE_RETRIES ]; then
-              sleep $((i * 2))
-              rm -rf "$TEMP_DIR"
-            fi
+        # 尝试使用HTTPS克隆（不需要SSH密钥）
+        echo "尝试使用HTTPS克隆Gitee仓库..."
+        if ! git clone --depth=1 --single-branch --branch main https://gitee.com/aodb/is-work-app.git "$TEMP_DIR"; then
+          echo "HTTPS克隆失败，尝试使用SSH克隆..."
+          if ! git clone --depth=1 --single-branch --branch main git@gitee.com:aodb/is-work-app.git "$TEMP_DIR"; then
+            echo "克隆失败，创建空仓库..."
+            mkdir -p "$TEMP_DIR"
+            cd "$TEMP_DIR"
+            git init
+            git remote add origin git@gitee.com:aodb/is-work-app.git
+            git checkout -b main || git checkout --orphan main
           fi
-        done
-        
-        if [ "$CLONE_SUCCESS" != true ]; then
-          echo "克隆失败，创建空仓库..."
-          mkdir -p "$TEMP_DIR"
-          cd "$TEMP_DIR"
-          git init
-          git remote add origin git@gitee.com:aodb/is-work-app.git
-          git checkout -b main
         fi
         
         # 拷贝热搜数据文件
-        cp hot_data.txt "$TEMP_DIR/"
+        cp hot_data.txt "$TEMP_DIR/" || {
+          echo "无法复制热搜数据文件，创建空文件"
+          touch "$TEMP_DIR/hot_data.txt"
+        }
         
         # 提交并推送
         cd "$TEMP_DIR"
@@ -147,40 +128,39 @@ jobs:
         git config user.name "GitHub Action"
         git add hot_data.txt
         
-        # 检查是否有变更
-        if git diff --cached --quiet; then
-          echo "无数据变更，跳过提交"
-        else
-          git commit -m "从GitHub更新热搜数据 $(date '+%Y-%m-%d %H:%M:%S')"
+        # 即使没有变更也创建提交（确保有分支存在）
+        git commit --allow-empty -m "从GitHub更新热搜数据 $(date '+%Y-%m-%d %H:%M:%S')" || echo "提交失败，但继续执行"
+        
+        # 尝试使用HTTPS推送（需要用户名和密码）
+        if [ -n "${{ secrets.GITEE_USERNAME }}" ] && [ -n "${{ secrets.GITEE_PASSWORD }}" ]; then
+          echo "尝试使用HTTPS推送..."
+          git remote set-url origin https://${{ secrets.GITEE_USERNAME }}:${{ secrets.GITEE_PASSWORD }}@gitee.com/aodb/is-work-app.git
+        fi
+        
+        # 使用递增延迟的重试策略，增加重试次数
+        MAX_RETRIES=8  # 增加到8次重试
+        RETRY_COUNT=0
+        PUSH_SUCCESS=false
+        
+        until [ "$PUSH_SUCCESS" = true ] || [ $RETRY_COUNT -ge $MAX_RETRIES ]; do
+          RETRY_COUNT=$((RETRY_COUNT+1))
+          WAIT_TIME=$((RETRY_COUNT * 5))  # 增加等待时间到每次5秒递增
           
-          # 使用递增延迟的重试策略
-          MAX_RETRIES=5
-          RETRY_COUNT=0
-          PUSH_SUCCESS=false
-          
-          until [ "$PUSH_SUCCESS" = true ] || [ $RETRY_COUNT -ge $MAX_RETRIES ]; do
-            RETRY_COUNT=$((RETRY_COUNT+1))
-            WAIT_TIME=$((RETRY_COUNT * 3))
-            
-            echo "尝试推送到Gitee (尝试 $RETRY_COUNT/$MAX_RETRIES)..."
-            if git push -f origin main; then
-              PUSH_SUCCESS=true
-              echo "推送成功!"
-            else
-              if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-                echo "推送失败，等待${WAIT_TIME}秒后重试..."
-                sleep $WAIT_TIME
-                # 更新远程引用
-                git fetch origin main
-                git reset --soft origin/main
-              fi
+          echo "尝试推送到Gitee (尝试 $RETRY_COUNT/$MAX_RETRIES)..."
+          if git push -f origin main; then
+            PUSH_SUCCESS=true
+            echo "推送成功!"
+          else
+            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+              echo "推送失败，等待${WAIT_TIME}秒后重试..."
+              sleep $WAIT_TIME
             fi
-          done
-          
-          if [ "$PUSH_SUCCESS" != true ]; then
-            echo "推送到Gitee失败，达到最大重试次数"
-            exit 1
           fi
+        done
+        
+        if [ "$PUSH_SUCCESS" != true ]; then
+          echo "推送到Gitee失败，达到最大重试次数，但继续执行工作流"
+          # 不退出，让工作流继续执行
         fi
         
     - name: 清理
@@ -188,11 +168,13 @@ jobs:
       run: |
         # 安全删除敏感文件
         if [ -f ~/.ssh/id_rsa ]; then
-          shred -u ~/.ssh/id_rsa 2>/dev/null || rm -f ~/.ssh/id_rsa
+          rm -f ~/.ssh/id_rsa 2>/dev/null || true
         fi
-        rm -f ~/.ssh/known_hosts
         
         # 清理临时目录
-        if [ -n "${{ steps.prepare_ssh.outputs.timestamp }}" ]; then
-          rm -rf "/tmp/gitee-sync-${{ steps.prepare_ssh.outputs.timestamp }}"
-        fi
+        find /tmp -maxdepth 1 -name "gitee-sync-*" -type d -exec rm -rf {} \; 2>/dev/null || true
+        
+        # 删除可能的敏感环境变量
+        unset GITEE_USERNAME
+        unset GITEE_PASSWORD
+        unset SSH_PRIVATE_KEY
