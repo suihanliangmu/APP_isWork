@@ -65,33 +65,43 @@ jobs:
       env:
         SSH_PRIVATE_KEY: ${{ secrets.GITEE_PRIVATE_KEY }}
       run: |
-        # 确保变量非空
-        if [ -z "$SSH_PRIVATE_KEY" ]; then
-          echo "错误: GITEE_PRIVATE_KEY 密钥未设置"
+        set -e  # 出错立即退出
+        
+        # 确保变量非空且不是占位符
+        if [ -z "$SSH_PRIVATE_KEY" ] || [ "$SSH_PRIVATE_KEY" = "***" ]; then
+          echo "错误: GITEE_PRIVATE_KEY 密钥未正确设置"
           exit 1
         fi
         
-        # 写入密钥文件 - 确保输出结尾有换行符
-        echo -e "$SSH_PRIVATE_KEY\n" > ~/.ssh/id_rsa
+        # 清理可能存在的旧密钥
+        rm -f ~/.ssh/id_rsa ~/.ssh/id_rsa.pub ~/.ssh/known_hosts
+        
+        # 写入密钥文件前检查格式
+        if ! echo "$SSH_PRIVATE_KEY" | grep -q "BEGIN.*PRIVATE KEY"; then
+          echo "错误: SSH密钥格式不正确"
+          exit 1
+        fi
+        
+        # 写入密钥文件
+        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
         
         # 扫描主机密钥并验证
-        ssh-keyscan -t rsa gitee.com > ~/.ssh/known_hosts 2>/dev/null
+        ssh-keyscan -t rsa,ecdsa,ed25519 gitee.com > ~/.ssh/known_hosts 2>/dev/null
         chmod 644 ~/.ssh/known_hosts
         
-        # 跳过密钥验证步骤，直接使用提供的密钥
+        # 验证密钥格式和连接性
+        if ! ssh-keygen -l -f ~/.ssh/id_rsa >/dev/null 2>&1; then
+          echo "错误: SSH密钥格式无效"
+          exit 1
+        fi
         
-    - name: 测试SSH连接
-      id: test_ssh
-      continue-on-error: true
-      run: |
-        # 使用-v参数获取更详细的连接信息，便于调试
-        ssh -v -o StrictHostKeyChecking=no -o BatchMode=yes -T git@gitee.com 2>&1 || true
-        # 即使SSH测试失败也继续执行
-        echo "success=true" >> $GITHUB_OUTPUT
+        # 快速测试连接
+        if ! ssh -o BatchMode=yes -o ConnectTimeout=10 -T git@gitee.com 2>&1 | grep -v "Permission denied" >/dev/null; then
+          echo "警告: SSH连接测试未完全通过，但可能仍可继续"
+        fi
         
     - name: 同步hot_data.txt到Gitee
-      if: always()  # 无论SSH测试成功与否都尝试同步
       id: sync_to_gitee
       env:
         TEMP_DIR: "/tmp/gitee-sync-${{ steps.prepare_ssh.outputs.timestamp }}"
@@ -103,14 +113,30 @@ jobs:
         
         # 使用更可靠的克隆策略
         echo "开始克隆Gitee仓库..."
-        git clone --depth=1 --single-branch --branch main git@gitee.com:aodb/is-work-app.git "$TEMP_DIR" || {
+        MAX_CLONE_RETRIES=3
+        CLONE_SUCCESS=false
+        
+        for i in $(seq 1 $MAX_CLONE_RETRIES); do
+          if git clone --depth=1 --single-branch --branch main git@gitee.com:aodb/is-work-app.git "$TEMP_DIR"; then
+            CLONE_SUCCESS=true
+            break
+          else
+            echo "克隆失败 (尝试 $i/$MAX_CLONE_RETRIES)"
+            if [ $i -lt $MAX_CLONE_RETRIES ]; then
+              sleep $((i * 2))
+              rm -rf "$TEMP_DIR"
+            fi
+          fi
+        done
+        
+        if [ "$CLONE_SUCCESS" != true ]; then
           echo "克隆失败，创建空仓库..."
           mkdir -p "$TEMP_DIR"
           cd "$TEMP_DIR"
           git init
           git remote add origin git@gitee.com:aodb/is-work-app.git
           git checkout -b main
-        }
+        fi
         
         # 拷贝热搜数据文件
         cp hot_data.txt "$TEMP_DIR/"
@@ -121,33 +147,40 @@ jobs:
         git config user.name "GitHub Action"
         git add hot_data.txt
         
-        # 即使没有变更也创建提交（确保有分支存在）
-        git commit --allow-empty -m "从GitHub更新热搜数据 $(date '+%Y-%m-%d %H:%M:%S')"
-        
-        # 使用递增延迟的重试策略
-        MAX_RETRIES=5
-        RETRY_COUNT=0
-        PUSH_SUCCESS=false
-        
-        until [ "$PUSH_SUCCESS" = true ] || [ $RETRY_COUNT -ge $MAX_RETRIES ]; do
-          RETRY_COUNT=$((RETRY_COUNT+1))
-          WAIT_TIME=$((RETRY_COUNT * 3))
+        # 检查是否有变更
+        if git diff --cached --quiet; then
+          echo "无数据变更，跳过提交"
+        else
+          git commit -m "从GitHub更新热搜数据 $(date '+%Y-%m-%d %H:%M:%S')"
           
-          echo "尝试推送到Gitee (尝试 $RETRY_COUNT/$MAX_RETRIES)..."
-          if git push -f origin main; then
-            PUSH_SUCCESS=true
-            echo "推送成功!"
-          else
-            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-              echo "推送失败，等待${WAIT_TIME}秒后重试..."
-              sleep $WAIT_TIME
+          # 使用递增延迟的重试策略
+          MAX_RETRIES=5
+          RETRY_COUNT=0
+          PUSH_SUCCESS=false
+          
+          until [ "$PUSH_SUCCESS" = true ] || [ $RETRY_COUNT -ge $MAX_RETRIES ]; do
+            RETRY_COUNT=$((RETRY_COUNT+1))
+            WAIT_TIME=$((RETRY_COUNT * 3))
+            
+            echo "尝试推送到Gitee (尝试 $RETRY_COUNT/$MAX_RETRIES)..."
+            if git push -f origin main; then
+              PUSH_SUCCESS=true
+              echo "推送成功!"
+            else
+              if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                echo "推送失败，等待${WAIT_TIME}秒后重试..."
+                sleep $WAIT_TIME
+                # 更新远程引用
+                git fetch origin main
+                git reset --soft origin/main
+              fi
             fi
+          done
+          
+          if [ "$PUSH_SUCCESS" != true ]; then
+            echo "推送到Gitee失败，达到最大重试次数"
+            exit 1
           fi
-        done
-        
-        if [ "$PUSH_SUCCESS" != true ]; then
-          echo "推送到Gitee失败，达到最大重试次数"
-          exit 1
         fi
         
     - name: 清理
@@ -157,6 +190,7 @@ jobs:
         if [ -f ~/.ssh/id_rsa ]; then
           shred -u ~/.ssh/id_rsa 2>/dev/null || rm -f ~/.ssh/id_rsa
         fi
+        rm -f ~/.ssh/known_hosts
         
         # 清理临时目录
         if [ -n "${{ steps.prepare_ssh.outputs.timestamp }}" ]; then
