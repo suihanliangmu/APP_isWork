@@ -45,7 +45,7 @@ jobs:
           echo "更新::无更改，跳过提交"
           echo "has_changes=false" >> $GITHUB_OUTPUT
         else
-          git commit -m "更新百度热搜数据 $(date '+%Y-%m-%d %H:%M:%S')"
+          git commit -m "更新数据 $(date '+%Y-%m-%d %H:%M:%S')"
           echo "更新::成功提交更改"
           echo "has_changes=true" >> $GITHUB_OUTPUT
         fi
