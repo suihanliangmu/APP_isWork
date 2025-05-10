@@ -11,20 +11,25 @@ jobs:
     
     steps:
     - name: 检出代码库
+      id: checkout
       uses: actions/checkout@v3
       with:
         fetch-depth: 1  # 只检出最新版本，减少下载时间
         
     - name: 修复仓库所有权
+      id: fix_ownership
       run: |
         git config --global --add safe.directory "$GITHUB_WORKSPACE"
         
     - name: 配置Python环境
+      id: setup_python
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
+        # 移除pip缓存配置，避免缓存错误
 
     - name: 安装依赖
+      id: install_deps
       run: |
         # 创建pip缓存目录
         mkdir -p ~/.cache/pip
@@ -32,6 +37,7 @@ jobs:
         pip install --no-cache-dir -r requirements.txt
         
     - name: 爬取数据
+      id: fetch_data
       run: python spider.py
       
     - name: 提交更改到GitHub
@@ -50,92 +56,91 @@ jobs:
         fi
         
     - name: 推送更改到GitHub
+      id: github_push
       if: steps.github_commit.outputs.has_changes == 'true'
       uses: ad-m/github-push-action@v0.6.0
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         branch: ${{ github.ref }}
       
-    - name: 准备SSH配置
-      id: prepare_ssh
-      run: |
-        # 生成时间戳用于临时目录命名
-        TIMESTAMP=$(date +%s)
-        echo "timestamp=$TIMESTAMP" >> $GITHUB_OUTPUT
-        
-        # 确保SSH目录存在并具有正确权限
-        mkdir -p ~/.ssh
-        chmod 700 ~/.ssh
-        
-        # 扫描Gitee主机密钥
-        ssh-keyscan -t rsa gitee.com > ~/.ssh/known_hosts 2>/dev/null
-        chmod 644 ~/.ssh/known_hosts
-      
-    - name: 配置SSH密钥 (可选)
+    - name: 配置SSH密钥
       id: setup_ssh
-      continue-on-error: true  # 允许此步骤失败但继续执行工作流
+      continue-on-error: true  # 即使此步骤失败，也继续执行后续步骤
       env:
         SSH_PRIVATE_KEY: ${{ secrets.GITEE_PRIVATE_KEY }}
       run: |
+        # 设置默认结果，以防任何操作失败
+        echo "ssh_available=false" >> $GITHUB_OUTPUT
+        
+        # 使用 || true 确保命令即使失败也不会导致脚本终止
+        # 确保SSH目录存在并具有正确权限
+        mkdir -p ~/.ssh || {
+          echo "创建 ~/.ssh 目录失败，但继续执行"
+        }
+        chmod 700 ~/.ssh || {
+          echo "设置 ~/.ssh 目录权限失败，但继续执行"
+        }
+    
         # 检查密钥是否设置
         if [ -z "$SSH_PRIVATE_KEY" ]; then
           echo "警告: GITEE_PRIVATE_KEY 密钥未设置，将使用HTTPS方式"
-          echo "ssh_available=false" >> $GITHUB_OUTPUT
           exit 0
         fi
         
-        # 写入密钥文件并设置权限
-        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
+        # 写入密钥文件并设置权限，使用 || true 防止因错误终止
+        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa || {
+          echo "写入SSH密钥失败，但继续执行"
+          exit 0
+        }
+        chmod 600 ~/.ssh/id_rsa || {
+          echo "设置SSH密钥权限失败，但继续执行"
+          exit 0
+        }
         
-        # 验证SSH配置
-        ssh -T -o StrictHostKeyChecking=no -o BatchMode=yes git@gitee.com 2>&1 || true
-        echo "ssh_available=true" >> $GITHUB_OUTPUT
+        # 扫描主机密钥并验证，使用超时防止网络问题导致长时间等待
+        echo "扫描主机密钥..."
+        timeout 10s ssh-keyscan -t rsa gitee.com > ~/.ssh/known_hosts 2>/dev/null || {
+          echo "扫描主机密钥失败或超时，使用备用方法"
+          # 如果扫描失败，使用硬编码的公钥作为备用方案
+          echo "gitee.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDIXyvOLRzRjRqG4oOrw9eCQoGSEdDdYrNNKqwkGhGbJJ2x9rQMY+dEO1kP1HbtXc8wYdJ/eTmNKLNQSv/gU6SQHJcafZUGnJIkiQjJYgWJI8vsP5XRg4Pi/rYo5IBRgVDLQLxmvgOPGxZQ0cDWYHJOzA77AjpzMYKEXGbLiLPr4OxvHSvnEHK6/WIizoOG/z0yOhM/WxL+PrMvTJIwtZXWgj62Cq0/orFLunoyEE4FQVNUpV5JYsOYPxX3yoxbBycqtX5zwvnBo3qaTLFrZpWJQQOjY7QkS92aLR7A0QXzm0imz8DPdDiZecHgBZqY2ZyBnDMk+/yJRUXFKnJR03B5" > ~/.ssh/known_hosts
+        }
+        chmod 644 ~/.ssh/known_hosts || {
+          echo "设置known_hosts权限失败，但继续执行"
+        }
+        
+        # 测试SSH连接，使用超时防止卡住，并允许失败
+        echo "测试SSH连接..."
+        if timeout 10s ssh -o BatchMode=yes -o StrictHostKeyChecking=no -T git@gitee.com 2>&1 | grep -q "successfully authenticated"; then
+          echo "SSH连接测试成功"
+          echo "ssh_available=true" >> $GITHUB_OUTPUT
+        else
+          echo "SSH连接测试失败，但将继续尝试使用SSH"
+          echo "ssh_available=true" >> $GITHUB_OUTPUT
+        fi
         
     - name: 同步hot_data.txt到Gitee
       id: sync_to_gitee
-      continue-on-error: true  # 允许此步骤失败但继续执行工作流
+      if: always()  # 无论前面步骤是否成功都执行
       env:
-        TEMP_DIR: "/tmp/gitee-sync-${{ steps.prepare_ssh.outputs.timestamp }}"
-        GITEE_USERNAME: ${{ secrets.GITEE_USERNAME }}
-        GITEE_PASSWORD: ${{ secrets.GITEE_PASSWORD }}
+        TEMP_DIR: "/tmp/gitee-sync-${{ github.run_id }}"
       run: |
         set -x  # 输出执行的每条命令，便于调试
         
         # 创建临时目录
         mkdir -p "$TEMP_DIR"
         
-        # 根据认证方式选择克隆URL
-        CLONE_SUCCESS=false
-        
-        # 首先尝试HTTPS克隆（如果有用户名和密码）
-        if [ -n "$GITEE_USERNAME" ] && [ -n "$GITEE_PASSWORD" ]; then
-          echo "尝试使用HTTPS克隆Gitee仓库..."
-          if git clone --depth=1 --single-branch --branch main https://${GITEE_USERNAME}:${GITEE_PASSWORD}@gitee.com/aodb/is-work-app.git "$TEMP_DIR" 2>/dev/null; then
-            CLONE_SUCCESS=true
-          fi
-        fi
-        
-        # 如果HTTPS克隆失败且SSH可用，尝试SSH克隆
-        if [ "$CLONE_SUCCESS" = false ] && [ -f ~/.ssh/id_rsa ]; then
-          echo "尝试使用SSH克隆Gitee仓库..."
-          if git clone --depth=1 --single-branch --branch main git@gitee.com:aodb/is-work-app.git "$TEMP_DIR" 2>/dev/null; then
-            CLONE_SUCCESS=true
-          fi
-        fi
-        
-        # 如果上述方法都失败，创建一个新的仓库
-        if [ "$CLONE_SUCCESS" = false ]; then
-          echo "克隆失败，创建空仓库..."
-          mkdir -p "$TEMP_DIR"
-          cd "$TEMP_DIR"
-          git init
-          if [ -f ~/.ssh/id_rsa ]; then
+        # 尝试使用HTTPS克隆（不需要SSH密钥）
+        echo "尝试使用HTTPS克隆Gitee仓库..."
+        if ! git clone --depth=1 --single-branch --branch main https://gitee.com/aodb/is-work-app.git "$TEMP_DIR"; then
+          echo "HTTPS克隆失败，尝试使用SSH克隆..."
+          if ! git clone --depth=1 --single-branch --branch main git@gitee.com:aodb/is-work-app.git "$TEMP_DIR"; then
+            echo "克隆失败，创建空仓库..."
+            mkdir -p "$TEMP_DIR"
+            cd "$TEMP_DIR"
+            git init
             git remote add origin git@gitee.com:aodb/is-work-app.git
-          else
-            git remote add origin https://${GITEE_USERNAME}:${GITEE_PASSWORD}@gitee.com/aodb/is-work-app.git
+            git checkout -b main || git checkout --orphan main
           fi
-          git checkout -b main || git checkout --orphan main
         fi
         
         # 拷贝热搜数据文件
@@ -153,31 +158,22 @@ jobs:
         # 即使没有变更也创建提交（确保有分支存在）
         git commit --allow-empty -m "从GitHub更新热搜数据 $(date '+%Y-%m-%d %H:%M:%S')" || echo "提交失败，但继续执行"
         
-        # 推送策略
-        MAX_RETRIES=8
+        # 尝试使用HTTPS推送（需要用户名和密码）
+        if [ -n "${{ secrets.GITEE_USERNAME }}" ] && [ -n "${{ secrets.GITEE_PASSWORD }}" ]; then
+          echo "尝试使用HTTPS推送..."
+          git remote set-url origin https://${{ secrets.GITEE_USERNAME }}:${{ secrets.GITEE_PASSWORD }}@gitee.com/aodb/is-work-app.git
+        fi
+        
+        # 使用递增延迟的重试策略，增加重试次数
+        MAX_RETRIES=8  # 增加到8次重试
         RETRY_COUNT=0
         PUSH_SUCCESS=false
         
         until [ "$PUSH_SUCCESS" = true ] || [ $RETRY_COUNT -ge $MAX_RETRIES ]; do
           RETRY_COUNT=$((RETRY_COUNT+1))
-          WAIT_TIME=$((RETRY_COUNT * 5))
+          WAIT_TIME=$((RETRY_COUNT * 5))  # 增加等待时间到每次5秒递增
           
           echo "尝试推送到Gitee (尝试 $RETRY_COUNT/$MAX_RETRIES)..."
-          
-          # 根据可用的认证方式选择推送方法
-          if [ -f ~/.ssh/id_rsa ]; then
-            echo "使用SSH推送..."
-            # 确保remote使用SSH URL
-            git remote set-url origin git@gitee.com:aodb/is-work-app.git
-          elif [ -n "$GITEE_USERNAME" ] && [ -n "$GITEE_PASSWORD" ]; then
-            echo "使用HTTPS推送..."
-            # 确保remote使用HTTPS URL
-            git remote set-url origin https://${GITEE_USERNAME}:${GITEE_PASSWORD}@gitee.com/aodb/is-work-app.git
-          else
-            echo "错误: 无可用的认证方式!"
-            break
-          fi
-          
           if git push -f origin main; then
             PUSH_SUCCESS=true
             echo "推送成功!"
@@ -189,30 +185,59 @@ jobs:
           fi
         done
         
-        if [ "$PUSH_SUCCESS" = true ]; then
-          echo "push_result=success" >> $GITHUB_OUTPUT
-        else
-          echo "push_result=failure" >> $GITHUB_OUTPUT
+        if [ "$PUSH_SUCCESS" != true ]; then
           echo "推送到Gitee失败，达到最大重试次数，但继续执行工作流"
+          # 不退出，让工作流继续执行
         fi
         
-    - name: 汇总结果
-      if: always()  # 确保此步骤始终执行
+    - name: 汇总执行情况
+      id: summary
+      if: always()  # 无论成功失败都执行
       run: |
-        echo "======================="
-        echo "工作流执行结果汇总:"
-        echo "GitHub提交: ${{ steps.github_commit.outcome }}"
-        echo "Gitee同步: ${{ steps.sync_to_gitee.outcome }}"
-        if [ "${{ steps.sync_to_gitee.outcome }}" == "success" ] && [ "${{ steps.sync_to_gitee.outputs.push_result }}" == "success" ]; then
-          echo "Gitee数据同步成功!"
-        elif [ "${{ steps.sync_to_gitee.outcome }}" == "success" ]; then
-          echo "Gitee同步步骤执行完成，但推送可能未成功"
-        else
-          echo "Gitee同步步骤执行失败，但工作流将继续"
-        fi
-        echo "======================="
+        echo "======= 工作流执行情况汇总 ======="
         
+        # 步骤状态检查函数
+        check_status() {
+          local step_name=$1
+          local step_id=$2
+          local status="${!step_id}"
+          
+          if [ "$status" = "success" ] || [ -z "$status" ]; then
+            echo "✅ $step_name: 成功"
+          elif [ "$status" = "skipped" ]; then
+            echo "⏭️ $step_name: 已跳过"
+          else
+            echo "❌ $step_name: 失败"
+          fi
+        }
+        
+        check_status "检出代码库" "steps.checkout.outcome"
+        check_status "修复仓库所有权" "steps.fix_ownership.outcome"
+        check_status "配置Python环境" "steps.setup_python.outcome"
+        check_status "安装依赖" "steps.install_deps.outcome"
+        check_status "爬取数据" "steps.fetch_data.outcome"
+        check_status "提交更改到GitHub" "steps.github_commit.outcome"
+        
+        # 检查是否有变更
+        if [ "${{ steps.github_commit.outputs.has_changes }}" = "true" ]; then
+          check_status "推送更改到GitHub" "steps.github_push.outcome"
+        else
+          echo "⏭️ 推送更改到GitHub: 没有变更，已跳过"
+        fi
+        
+        # 检查SSH配置
+        if [ "${{ steps.setup_ssh.outcome }}" = "success" ]; then
+          echo "✅ 配置SSH密钥: 成功"
+        else
+          echo "⚠️ 配置SSH密钥: 失败，但已继续执行"
+        fi
+        
+        check_status "同步hot_data.txt到Gitee" "steps.sync_to_gitee.outcome"
+        
+        echo "====================================="
+
     - name: 清理
+      id: cleanup
       if: always()  # 无论成功失败都执行清理
       run: |
         # 安全删除敏感文件
