@@ -196,43 +196,91 @@ jobs:
       run: |
         echo "======= 工作流执行情况汇总 ======="
         
-        # 步骤状态检查函数
-        check_status() {
-          local step_name=$1
-          local step_id=$2
-          local status="${!step_id}"
-          
-          if [ "$status" = "success" ] || [ -z "$status" ]; then
-            echo "✅ $step_name: 成功"
-          elif [ "$status" = "skipped" ]; then
-            echo "⏭️ $step_name: 已跳过"
+        # 直接检查每个步骤的状态
+        # GitHub Actions 在工作流中不支持通过变量名间接引用，所以我们改用直接判断
+        
+        # 检出代码库
+        if [ "${{ steps.checkout.conclusion }}" == "success" ]; then
+          echo "✅ 检出代码库: 成功"
+        elif [ "${{ steps.checkout.conclusion }}" == "skipped" ]; then
+          echo "⏭️ 检出代码库: 已跳过"
+        else
+          echo "❌ 检出代码库: 失败 (${{ steps.checkout.conclusion }})"
+        fi
+        
+        # 修复仓库所有权
+        if [ "${{ steps.fix_ownership.conclusion }}" == "success" ]; then
+          echo "✅ 修复仓库所有权: 成功"
+        elif [ "${{ steps.fix_ownership.conclusion }}" == "skipped" ]; then
+          echo "⏭️ 修复仓库所有权: 已跳过"
+        else
+          echo "❌ 修复仓库所有权: 失败 (${{ steps.fix_ownership.conclusion }})"
+        fi
+        
+        # 配置Python环境
+        if [ "${{ steps.setup_python.conclusion }}" == "success" ]; then
+          echo "✅ 配置Python环境: 成功"
+        elif [ "${{ steps.setup_python.conclusion }}" == "skipped" ]; then
+          echo "⏭️ 配置Python环境: 已跳过"
+        else
+          echo "❌ 配置Python环境: 失败 (${{ steps.setup_python.conclusion }})"
+        fi
+        
+        # 安装依赖
+        if [ "${{ steps.install_deps.conclusion }}" == "success" ]; then
+          echo "✅ 安装依赖: 成功"
+        elif [ "${{ steps.install_deps.conclusion }}" == "skipped" ]; then
+          echo "⏭️ 安装依赖: 已跳过"
+        else
+          echo "❌ 安装依赖: 失败 (${{ steps.install_deps.conclusion }})"
+        fi
+        
+        # 爬取数据
+        if [ "${{ steps.fetch_data.conclusion }}" == "success" ]; then
+          echo "✅ 爬取数据: 成功"
+        elif [ "${{ steps.fetch_data.conclusion }}" == "skipped" ]; then
+          echo "⏭️ 爬取数据: 已跳过"
+        else
+          echo "❌ 爬取数据: 失败 (${{ steps.fetch_data.conclusion }})"
+        fi
+        
+        # 提交更改到GitHub
+        if [ "${{ steps.github_commit.conclusion }}" == "success" ]; then
+          echo "✅ 提交更改到GitHub: 成功"
+        elif [ "${{ steps.github_commit.conclusion }}" == "skipped" ]; then
+          echo "⏭️ 提交更改到GitHub: 已跳过"
+        else
+          echo "❌ 提交更改到GitHub: 失败 (${{ steps.github_commit.conclusion }})"
+        fi
+        
+        # 推送更改到GitHub
+        if [ "${{ steps.github_commit.outputs.has_changes }}" == "true" ]; then
+          if [ "${{ steps.github_push.conclusion }}" == "success" ]; then
+            echo "✅ 推送更改到GitHub: 成功"
+          elif [ "${{ steps.github_push.conclusion }}" == "skipped" ]; then
+            echo "⏭️ 推送更改到GitHub: 已跳过"
           else
-            echo "❌ $step_name: 失败"
+            echo "❌ 推送更改到GitHub: 失败 (${{ steps.github_push.conclusion }})"
           fi
-        }
-        
-        check_status "检出代码库" "steps.checkout.outcome"
-        check_status "修复仓库所有权" "steps.fix_ownership.outcome"
-        check_status "配置Python环境" "steps.setup_python.outcome"
-        check_status "安装依赖" "steps.install_deps.outcome"
-        check_status "爬取数据" "steps.fetch_data.outcome"
-        check_status "提交更改到GitHub" "steps.github_commit.outcome"
-        
-        # 检查是否有变更
-        if [ "${{ steps.github_commit.outputs.has_changes }}" = "true" ]; then
-          check_status "推送更改到GitHub" "steps.github_push.outcome"
         else
           echo "⏭️ 推送更改到GitHub: 没有变更，已跳过"
         fi
         
-        # 检查SSH配置
-        if [ "${{ steps.setup_ssh.outcome }}" = "success" ]; then
+        # 配置SSH密钥
+        if [ "${{ steps.setup_ssh.conclusion }}" == "success" ]; then
           echo "✅ 配置SSH密钥: 成功"
         else
-          echo "⚠️ 配置SSH密钥: 失败，但已继续执行"
+          echo "⚠️ 配置SSH密钥: ${{ steps.setup_ssh.conclusion }}，但已继续执行"
         fi
         
-        check_status "同步hot_data.txt到Gitee" "steps.sync_to_gitee.outcome"
+        # 同步到Gitee
+        if [ "${{ steps.sync_to_gitee.conclusion }}" == "success" ]; then
+          echo "✅ 同步hot_data.txt到Gitee: 成功"
+        elif [ "${{ steps.sync_to_gitee.conclusion }}" == "skipped" ]; then
+          echo "⏭️ 同步hot_data.txt到Gitee: 已跳过"
+        else
+          echo "❌ 同步hot_data.txt到Gitee: 失败 (${{ steps.sync_to_gitee.conclusion }})"
+        fi
         
         echo "====================================="
 
